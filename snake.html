@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 移动端视口适配：宽度=device-width，禁止缩放 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>经典贪吃蛇 | Jitaimei小游戏 minigames.jitaimei.top</title>
+    <style>
+        /* 通用样式重置：清除内外边距，盒模型为border-box，禁止触摸/文本选择（游戏交互优化） */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        /* 页面主体样式：渐变背景，弹性布局居中，隐藏溢出，文字白色 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+            color: white;
+        }
+        /* 头部导航栏：通栏，毛玻璃背景，弹性布局两端对齐 */
+        .header {
+            width: 100%;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            position: relative;
+            z-index: 10;
+        }
+        /* 返回主站按钮：渐变背景，圆角，阴影hover效果 */
+        .back-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 14px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(238, 90, 36, 0.4);
+        }
+        .back-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(238, 90, 36, 0.6);
+        }
+        /* 头部右侧按钮容器：弹性布局，间距10px */
+        .header-right {
+            display: flex;
+            gap: 10px;
+        }
+        /* 图标按钮（设置/帮助）：圆形，半透背景，hover旋转+加深背景 */
+        .icon-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: rotate(15deg);
+        }
+        /* 游戏主容器：弹性占满剩余高度，居中对齐，最大宽度限制 */
+        .game-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            width: 100%;
+            max-width: 1200px;
+        }
+        /* 得分板：大号字体，文字阴影，字间距 */
+        .score-board {
+            font-size: 24px;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+        /* 游戏画布外层容器：相对定位，圆角，溢出隐藏，深黑背景，大阴影 */
+        .game-wrapper {
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            background: #0a0a0a;
+        }
+        /* 游戏画布：块级元素，深黑背景 */
+        #gameCanvas {
+            display: block;
+            background: #0a0a0a;
+        }
+        /* PC端操作提示：居中，半透，行高优化 */
+        .controls-hint {
+            margin-top: 20px;
+            text-align: center;
+            opacity: 0.8;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        /* 按键样式：半透背景，圆角，等宽字体 */
+        .key {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin: 0 2px;
+            font-family: monospace;
+        }
+        /* 模态框基础样式：固定全屏，半透黑背景，毛玻璃，默认隐藏，居中 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        /* 模态框激活状态：显示弹性布局 */
+        .modal.active {
+            display: flex;
+        }
+        /* 模态框内容区：渐变背景，圆角，最大宽高限制，滑入动画 */
+        .modal-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 30px;
+            border-radius: 20px;
+            max-width: 90%;
+            width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            animation: slideIn 0.3s ease;
+        }
+        /* 模态框滑入动画：从上方50px淡入 */
+        @keyframes slideIn {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        /* 模态框标题：大号字体，居中，加粗 */
+        .modal-header {
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+        /* 模态框关闭按钮：绝对定位，无背景，大号字体，hover加深不透明度 */
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            opacity: 0.8;
+        }
+        .modal-close:hover {
+            opacity: 1;
+        }
+        /* 设置项容器：底部间距20px */
+        .setting-item {
+            margin-bottom: 20px;
+        }
+        /* 设置项标签：块级，底部间距，半透 */
+        .setting-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        /* 设置项当前值：黄色，加粗，左间距 */
+        .setting-value {
+            display: inline-block;
+            margin-left: 10px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        /* 滑块样式重置：自定义外观，半透背景 */
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.3);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        /* 滑块按钮样式：圆形，黄色，阴影 */
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffd700;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        /* 主按钮：通栏，渐变背景，圆角，hover放大 */
+        .btn-primary {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: transform 0.2s;
+        }
+        .btn-primary:hover {
+            transform: scale(1.05);
+        }
+        /* 帮助模块容器：底部间距 */
+        .help-section {
+            margin-bottom: 20px;
+        }
+        /* 帮助模块标题：黄色，中号字体 */
+        .help-title {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+        /* 帮助文本：行高优化，半透 */
+        .help-text {
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+        /* 手势图标：大号字体，左右间距 */
+        .gesture-icon {
+            font-size: 24px;
+            margin: 0 5px;
+        }
+        /* 游戏结束弹窗：绝对定位覆盖画布，半透黑，默认隐藏，弹性垂直居中 */
+        .game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 5;
+        }
+        /* 游戏结束弹窗激活状态：显示 */
+        .game-over.active {
+            display: flex;
+        }
+        /* 游戏结束文字：红色，大号，脉冲动画 */
+        .game-over-text {
+            font-size: 36px;
+            color: #ff6b6b;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            animation: pulse 1.5s infinite;
+        }
+        /* 脉冲动画：缩放循环 */
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        /* 最终得分：中号字体，底部间距 */
+        .final-score {
+            font-size: 20px;
+            margin-bottom: 30px;
+        }
+        /* 重新开始按钮：渐变背景，圆角，阴影hover效果 */
+        .restart-btn {
+            padding: 15px 40px;
+            font-size: 18px;
+            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+            border: none;
+            border-radius: 30px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0,242,254,0.4);
+        }
+        .restart-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,242,254,0.6);
+        }
+        /* 移动端适配（768px以下）：缩小头部/得分板/提示文字，调整按钮内边距 */
+        @media (max-width: 768px) {
+            .header {
+                padding: 10px 15px;
+            }
+            .back-btn {
+                padding: 8px 15px;
+                font-size: 12px;
+            }
+            .score-board {
+                font-size: 20px;
+            }
+            .controls-hint {
+                font-size: 12px;
+            }
+        }
+        /* 移动端滑动提示：默认隐藏，绝对定位底部，淡入淡出动画 */
+        .swipe-hint {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255,255,255,0.2);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            animation: fadeInOut 2s infinite;
+        }
+        /* 移动端显示滑动提示 */
+        @media (max-width: 768px) {
+            .swipe-hint {
+                display: block;
+            }
+        }
+        /* 淡入淡出动画：不透明度循环 */
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- 头部导航：返回按钮 + 设置/帮助图标按钮 -->
+    <div class="header">
+        <a href="https://minigames.jitaimei.top" class="back-btn">← 返回主站</a>
+        <div class="header-right">
+            <button class="icon-btn" onclick="openSettings()" title="设置">⚙️</button>
+            <button class="icon-btn" onclick="openHelp()" title="帮助">❓</button>
+        </div>
+    </div>
+
+    <!-- 游戏主容器：得分板 + 游戏画布 + 操作提示 -->
+    <div class="game-container">
+        <!-- 得分板：当前得分 + 历史最高分 -->
+        <div class="score-board">得分: <span id="score">0</span> | 最高分: <span id="highScore">0</span></div>
+        
+        <!-- 游戏画布外层：包含画布、游戏结束弹窗、移动端滑动提示 -->
+        <div class="game-wrapper" id="gameWrapper">
+            <!-- 游戏核心画布：绘制蛇/食物/网格 -->
+            <canvas id="gameCanvas"></canvas>
+            <!-- 游戏结束弹窗：默认隐藏 -->
+            <div class="game-over" id="gameOver">
+                <div class="game-over-text">游戏结束</div>
+                <div class="final-score">最终得分: <span id="finalScore">0</span></div>
+                <button class="restart-btn" onclick="restartGame()">重新开始</button>
+            </div>
+            <!-- 移动端滑动提示：默认隐藏，媒体查询显示 -->
+            <div class="swipe-hint">👆 上下左右滑动控制方向</div>
+        </div>
+        
+        <!-- PC端操作提示：移动端隐藏 -->
+        <div class="controls-hint" id="pcHint">
+            使用 <span class="key">↑</span><span class="key">↓</span><span class="key">←</span><span class="key">→</span> 方向键 
+            或 <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 移动
+        </div>
+    </div>
+
+    <!-- 设置模态框：游戏速度/画布宽高设置 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
+            <div class="modal-header">⚙️ 游戏设置</div>
+            <!-- 速度设置项 -->
+            <div class="setting-item">
+                <label class="setting-label">
+                    游戏速度 (毫秒/格)
+                    <span class="setting-value" id="speedValue">150</span>ms
+                </label>
+                <input type="range" id="speedRange" min="50" max="300" value="150" oninput="updateSpeed(this.value)">
+                <div style="display: flex; justify-content: space-between; font-size: 12px; opacity: 0.7; margin-top: 5px;">
+                    <span>快</span>
+                    <span>慢</span>
+                </div>
+            </div>
+            <!-- 宽度设置项 -->
+            <div class="setting-item">
+                <label class="setting-label">
+                    游戏区域宽度
+                    <span class="setting-value" id="widthValue">20</span>格
+                </label>
+                <input type="range" id="widthRange" min="10" max="100" value="20" oninput="updateWidth(this.value)">
+            </div>
+            <!-- 高度设置项 -->
+            <div class="setting-item">
+                <label class="setting-label">
+                    游戏区域高度
+                    <span class="setting-value" id="heightValue">30</span>格
+                </label>
+                <input type="range" id="heightRange" min="10" max="50" value="30" oninput="updateHeight(this.value)">
+                <div style="font-size: 12px; opacity: 0.7; margin-top: 5px; color: #ffd700;">
+                    范围: 10×10 至 100×50 (更改后需重新开始)
+                </div>
+            </div>
+            <button class="btn-primary" onclick="applySettings()">应用并重新开始</button>
+        </div>
+    </div>
+
+    <!-- 帮助模态框：PC/移动端操作说明 + 游戏规则 -->
+    <div class="modal" id="helpModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('helpModal')">&times;</button>
+            <div class="modal-header">❓ 游戏帮助</div>
+            <!-- PC端操作 -->
+            <div class="help-section">
+                <div class="help-title">🖥️ 电脑端操作</div>
+                <div class="help-text">
+                    使用键盘方向键 <span class="key">↑</span><span class="key">↓</span><span class="key">←</span><span class="key">→</span> 
+                    或 WASD 键 <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 
+                    控制蛇的移动方向。
+                </div>
+            </div>
+            <!-- 移动端操作 -->
+            <div class="help-section">
+                <div class="help-title">📱 移动端操作</div>
+                <div class="help-text">
+                    在游戏区域上<span class="gesture-icon">👆</span>上下左右滑动来控制移动方向。
+                    支持快速滑动和慢速滑动。
+                </div>
+            </div>
+            <!-- 游戏规则 -->
+            <div class="help-section">
+                <div class="help-title">🎯 游戏规则</div>
+                <div class="help-text">
+                    控制蛇吃掉红色的食物来增长身体和得分。不要撞墙或撞到自己！
+                    速度越快，挑战越大。
+                </div>
+            </div>
+            <button class="btn-primary" onclick="closeModal('helpModal')">知道了</button>
+        </div>
+    </div>
+
+    <script>
+        // 游戏核心配置对象：单元格大小、画布网格宽高、游戏速度、颜色主题
+        const config = {
+            cellSize: 20,    // 每个网格单元格的像素大小
+            gridWidth: 20,   // 游戏区域网格宽度（列数）
+            gridHeight: 30,  // 游戏区域网格高度（行数）
+            speed: 150,      // 游戏速度：毫秒/格（值越小越快）
+            colors: {        // 颜色配置：蛇身/蛇头/食物/网格
+                snake: '#4facfe',
+                snakeHead: '#00f2fe',
+                food: '#ff6b6b',
+                grid: '#1a1a1a'
+            }
+        };
+
+        // 游戏全局状态变量
+        let snake = [];        // 蛇的身体数组：每个元素为{x,y}坐标
+        let food = {};         // 食物坐标{x,y}
+        let direction = 'right';// 蛇当前移动方向
+        let nextDirection = 'right';// 蛇下一次移动方向（解决连续按键冲突）
+        let score = 0;         // 当前得分
+        let highScore = localStorage.getItem('snakeHighScore') || 0; // 历史最高分（本地存储）
+        let gameLoop = null;   // 游戏主循环定时器
+        let isGameOver = false;// 游戏是否结束
+        let isPaused = false;  // 游戏是否暂停（打开模态框时暂停）
+        let touchStartX = 0;   // 移动端触摸起始X坐标
+        let touchStartY = 0;   // 移动端触摸起始Y坐标
+
+        // 获取画布元素和2D绘图上下文
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const wrapper = document.getElementById('gameWrapper');
+        // 判断是否为移动端：屏幕宽度≤768 或 支持触摸事件
+        const isMobile = window.innerWidth <= 768 || 'ontouchstart' in window;
+
+        // 设备差异化配置：PC端加宽游戏区域，移动端隐藏PC操作提示
+        if (!isMobile) {
+            config.gridWidth = 50;
+            config.gridHeight = 30;
+            document.getElementById('widthRange').value = 50;
+            document.getElementById('widthValue').textContent = 50;
+        } else {
+            document.getElementById('pcHint').style.display = 'none';
+        }
+        // 初始化页面显示最高分
+        document.getElementById('highScore').textContent = highScore;
+
+        /**
+         * 游戏初始化：画布自适应 + 重置游戏状态 + 启动游戏循环
+         */
+        function initGame() {
+            resizeCanvas();
+            resetGame();
+            startGame();
+        }
+
+        /**
+         * 画布自适应：根据屏幕大小缩放画布，保证完整显示且不超出屏幕
+         */
+        function resizeCanvas() {
+            // 设置画布实际像素尺寸（网格数*单元格大小）
+            canvas.width = config.gridWidth * config.cellSize;
+            canvas.height = config.gridHeight * config.cellSize;
+            // 计算屏幕可用最大宽高
+            const maxWidth = window.innerWidth - 40;
+            const maxHeight = window.innerHeight - 200;
+            // 计算缩放比例：取宽/高缩放的最小值，最大为1（不放大）
+            const scale = Math.min(
+                maxWidth / canvas.width,
+                maxHeight / canvas.height,
+                1
+            );
+            // 应用缩放比例到画布样式
+            if (scale < 1) {
+                canvas.style.width = (canvas.width * scale) + 'px';
+                canvas.style.height = (canvas.height * scale) + 'px';
+            } else {
+                canvas.style.width = canvas.width + 'px';
+                canvas.style.height = canvas.height + 'px';
+            }
+        }
+
+        /**
+         * 重置游戏状态：初始化蛇的位置、方向、得分，生成食物，隐藏游戏结束弹窗
+         */
+        function resetGame() {
+            // 蛇的初始位置：画布中心，3节身体
+            const startX = Math.floor(config.gridWidth / 2);
+            const startY = Math.floor(config.gridHeight / 2);
+            snake = [
+                {x: startX, y: startY},
+                {x: startX - 1, y: startY},
+                {x: startX - 2, y: startY}
+            ];
+            direction = 'right';
+            nextDirection = 'right';
+            score = 0;
+            isGameOver = false;
+            isPaused = false;
+            // 更新页面得分显示
+            document.getElementById('score').textContent = score;
+            // 隐藏游戏结束弹窗
+            document.getElementById('gameOver').classList.remove('active');
+            // 生成初始食物
+            generateFood();
+        }
+
+        /**
+         * 生成食物：随机坐标，确保不生成在蛇的身体上
+         */
+        function generateFood() {
+            do {
+                // 随机生成网格内的坐标
+                food = {
+                    x: Math.floor(Math.random() * config.gridWidth),
+                    y: Math.floor(Math.random() * config.gridHeight)
+                };
+                // 循环直到食物坐标不在蛇身上
+            } while (isSnakeAt(food.x, food.y));
+        }
+
+        /**
+         * 判断指定坐标是否在蛇的身体上
+         * @param {number} x - 网格X坐标
+         * @param {number} y - 网格Y坐标
+         * @returns {boolean} 存在返回true，否则false
+         */
+        function isSnakeAt(x, y) {
+            return snake.some(segment => segment.x === x && segment.y === y);
+        }
+
+        /**
+         * 游戏主循环步骤：移动蛇、碰撞检测、吃食物判断、重绘画布
+         */
+        function gameStep() {
+            // 游戏结束/暂停时直接返回
+            if (isGameOver || isPaused) return;
+            // 更新当前方向为下一次方向（解决连续按键冲突）
+            direction = nextDirection;
+
+            // 复制蛇头坐标，计算新的蛇头位置
+            const head = {...snake[0]};
+            switch(direction) {
+                case 'up': head.y--; break;
+                case 'down': head.y++; break;
+                case 'left': head.x--; break;
+                case 'right': head.x++; break;
+            }
+
+            // 碰撞检测1：撞墙（超出网格边界）
+            if (head.x < 0 || head.x >= config.gridWidth || 
+                head.y < 0 || head.y >= config.gridHeight) {
+                gameOver();
+                return;
+            }
+            // 碰撞检测2：撞自己（新蛇头在身体上）
+            if (isSnakeAt(head.x, head.y)) {
+                gameOver();
+                return;
+            }
+
+            // 移动蛇：新蛇头加入数组头部
+            snake.unshift(head);
+            // 吃食物判断：新蛇头与食物坐标重合
+            if (head.x === food.x && head.y === food.y) {
+                // 得分+10，更新页面显示
+                score += 10;
+                document.getElementById('score').textContent = score;
+                // 更新最高分：本地存储+页面显示
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('snakeHighScore', highScore);
+                    document.getElementById('highScore').textContent = highScore;
+                }
+                // 生成新食物（蛇身增长，不删除尾部）
+                generateFood();
+            } else {
+                // 没吃食物：删除蛇尾，保持身体长度不变
+                snake.pop();
+            }
+
+            // 重绘画布
+            draw();
+        }
+
+        /**
+         * 绘制游戏画面：网格 → 食物 → 蛇（蛇头带眼睛）
+         */
+        function draw() {
+            // 1. 绘制网格背景
+            ctx.fillStyle = config.colors.grid;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // 绘制网格线：浅灰色细线条
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 0.5;
+            // 竖线
+            for (let i = 0; i <= config.gridWidth; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * config.cellSize, 0);
+                ctx.lineTo(i * config.cellSize, canvas.height);
+                ctx.stroke();
+            }
+            // 横线
+            for (let i = 0; i <= config.gridHeight; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, i * config.cellSize);
+                ctx.lineTo(canvas.width, i * config.cellSize);
+                ctx.stroke();
+            }
+
+            // 2. 绘制食物：圆形，带发光阴影
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = config.colors.food;
+            ctx.fillStyle = config.colors.food;
+            ctx.beginPath();
+            ctx.arc(
+                food.x * config.cellSize + config.cellSize/2, // 圆心X
+                food.y * config.cellSize + config.cellSize/2, // 圆心Y
+                config.cellSize/2 - 2, // 半径（留边距）
+                0,
+                Math.PI * 2 // 整圆
+            );
+            ctx.fill();
+            ctx.shadowBlur = 0; // 关闭阴影，避免影响后续绘制
+
+            // 3. 绘制蛇：蛇头特殊颜色+发光+眼睛，蛇身普通颜色
+            snake.forEach((segment, index) => {
+                if (index === 0) {
+                    // 蛇头样式
+                    ctx.fillStyle = config.colors.snakeHead;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = config.colors.snakeHead;
+                } else {
+                    // 蛇身样式
+                    ctx.fillStyle = config.colors.snake;
+                    ctx.shadowBlur = 0;
+                }
+                // 绘制蛇的单元格（留1px边距）
+                ctx.fillRect(
+                    segment.x * config.cellSize + 1,
+                    segment.y * config.cellSize + 1,
+                    config.cellSize - 2,
+                    config.cellSize - 2
+                );
+
+                // 绘制蛇头眼睛：根据移动方向调整眼睛位置
+                if (index === 0) {
+                    ctx.fillStyle = '#fff'; // 眼睛白色
+                    const eyeSize = 3;      // 眼睛大小
+                    const offset = 5;       // 眼睛偏移量
+                    if (direction === 'up' || direction === 'down') {
+                        // 上下方向：眼睛左右分布
+                        ctx.fillRect(segment.x * config.cellSize + offset, segment.y * config.cellSize + (direction === 'up' ? offset : config.cellSize - offset - eyeSize), eyeSize, eyeSize);
+                        ctx.fillRect(segment.x * config.cellSize + config.cellSize - offset - eyeSize, segment.y * config.cellSize + (direction === 'up' ? offset : config.cellSize - offset - eyeSize), eyeSize, eyeSize);
+                    } else {
+                        // 左右方向：眼睛上下分布
+                        ctx.fillRect(segment.x * config.cellSize + (direction === 'left' ? offset : config.cellSize - offset - eyeSize), segment.y * config.cellSize + offset, eyeSize, eyeSize);
+                        ctx.fillRect(segment.x * config.cellSize + (direction === 'left' ? offset : config.cellSize - offset - eyeSize), segment.y * config.cellSize + config.cellSize - offset - eyeSize, eyeSize, eyeSize);
+                    }
+                }
+            });
+            ctx.shadowBlur = 0; // 确保阴影关闭
+        }
+
+        /**
+         * 游戏结束处理：清除定时器，显示结束弹窗，更新最终得分
+         */
+        function gameOver() {
+            isGameOver = true;
+            clearInterval(gameLoop);
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOver').classList.add('active');
+        }
+
+        /**
+         * 启动游戏循环：设置定时器，每隔config.speed执行一次gameStep
+         */
+        function startGame() {
+            // 先清除原有定时器，避免重复启动
+            if (gameLoop) clearInterval(gameLoop);
+            gameLoop = setInterval(gameStep, config.speed);
+        }
+
+        /**
+         * 重新开始游戏：重置状态 + 启动循环
+         */
+        function restartGame() {
+            resetGame();
+            startGame();
+        }
+
+        // PC端键盘事件：控制蛇的移动方向，禁止反向移动（如向右时不能直接向左）
+        document.addEventListener('keydown', (e) => {
+            if (isGameOver) return;
+            const key = e.key.toLowerCase();
+            if ((key === 'arrowup' || key === 'w') && direction !== 'down') {
+                nextDirection = 'up';
+                e.preventDefault(); // 阻止默认滚动行为
+            } else if ((key === 'arrowdown' || key === 's') && direction !== 'up') {
+                nextDirection = 'down';
+                e.preventDefault();
+            } else if ((key === 'arrowleft' || key === 'a') && direction !== 'right') {
+                nextDirection = 'left';
+                e.preventDefault();
+            } else if ((key === 'arrowright' || key === 'd') && direction !== 'left') {
+                nextDirection = 'right';
+                e.preventDefault();
+            }
+        });
+
+        // 移动端触摸开始事件：记录触摸起始坐标
+        canvas.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            e.preventDefault();
+        }, {passive: false});
+
+        // 移动端触摸移动事件：阻止默认滚动行为
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, {passive: false});
+
+        // 移动端触摸结束事件：判断滑动方向，控制蛇的移动，禁止反向
+        canvas.addEventListener('touchend', (e) => {
+            if (isGameOver) return;
+            // 获取触摸结束坐标
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            // 计算滑动偏移量
+            const dx = touchEndX - touchStartX;
+            const dy = touchEndY - touchStartY;
+            const minSwipeDistance = 30; // 最小滑动距离（过滤误触）
+
+            // 水平滑动（X偏移量更大且超过最小距离）
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > minSwipeDistance) {
+                if (dx > 0 && direction !== 'left') nextDirection = 'right';
+                else if (dx < 0 && direction !== 'right') nextDirection = 'left';
+            }
+            // 垂直滑动（Y偏移量更大且超过最小距离）
+            else if (Math.abs(dy) > minSwipeDistance) {
+                if (dy > 0 && direction !== 'up') nextDirection = 'down';
+                else if (dy < 0 && direction !== 'down') nextDirection = 'up';
+            }
+            e.preventDefault();
+        }, {passive: false});
+
+        // 页面触摸移动：全局阻止默认滚动，避免游戏时屏幕滑动
+        document.body.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, {passive: false});
+
+        /**
+         * 打开设置模态框：激活显示，暂停游戏
+         */
+        function openSettings() {
+            document.getElementById('settingsModal').classList.add('active');
+            isPaused = true;
+        }
+
+        /**
+         * 打开帮助模态框：激活显示，暂停游戏
+         */
+        function openHelp() {
+            document.getElementById('helpModal').classList.add('active');
+            isPaused = true;
+        }
+
+        /**
+         * 关闭模态框：隐藏，恢复游戏
+         * @param {string} modalId - 模态框ID
+         */
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+            isPaused = false;
+        }
+
+        /**
+         * 更新游戏速度：同步滑块值到配置和页面显示
+         * @param {number} value - 滑块当前值
+         */
+        function updateSpeed(value) {
+            document.getElementById('speedValue').textContent = value;
+            config.speed = parseInt(value);
+        }
+
+        /**
+         * 更新宽度显示：同步滑块值到页面（应用时才更新配置）
+         * @param {number} value - 滑块当前值
+         */
+        function updateWidth(value) {
+            document.getElementById('widthValue').textContent = value;
+        }
+
+        /**
+         * 更新高度显示：同步滑块值到页面（应用时才更新配置）
+         * @param {number} value - 滑块当前值
+         */
+        function updateHeight(value) {
+            document.getElementById('heightValue').textContent = value;
+        }
+
+        /**
+         * 应用游戏设置：更新配置，关闭模态框，重新初始化游戏
+         */
+        function applySettings() {
+            config.gridWidth = parseInt(document.getElementById('widthRange').value);
+            config.gridHeight = parseInt(document.getElementById('heightRange').value);
+            config.speed = parseInt(document.getElementById('speedRange').value);
+            closeModal('settingsModal');
+            initGame();
+        }
+
+        // 窗口大小改变事件：重新适配画布并绘制
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            draw();
+        });
+
+        // 页面加载完成，初始化并启动游戏
+        initGame();
+    </script>
+</body>
+</html>

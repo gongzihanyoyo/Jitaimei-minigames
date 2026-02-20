@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <!-- 字符编码设置 -->
+    <meta charset="UTF-8">
+    <!-- 视口配置：适配移动端，禁止缩放 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>经典扫雷 | Jitaimei小游戏 minigames.jitaimei.top</title>
+    <script>
+        // 自定义Tailwind主题配置：扩展扫雷专属颜色和字体
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        mine: {
+                            bg: '#C0C0C0',      // 游戏棋盘背景色
+                            cell: '#D0D0D0',    // 格子默认背景色
+                            border: '#7B7B7B #FFF #FFF #7B7B7B', // 格子边框色
+                            revealed: '#E0E0E0' // 格子揭开后背景色
+                        }
+                    },
+                    fontFamily: {
+                        mine: ['system-ui', 'sans-serif'] // 游戏默认字体
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            /* 扫雷基础格子样式：弹性居中、凸起边框、鼠标样式、禁止选中文本 */
+            .mine-cell {
+                @apply flex items-center justify-center border-2 cursor-pointer select-none font-bold transition-all;
+                border-style: outset; /* 凸起边框 */
+                border-color: #ffffff #7b7b7b #7b7b7b #ffffff; /* 左上白、右下灰，模拟立体 */
+                background-color: #d0d0d0;
+            }
+            /* 已揭开的格子样式：扁平边框、浅背景 */
+            .mine-cell-revealed {
+                @apply bg-mine-revealed border border-gray-400;
+                border-style: solid; /* 扁平边框取消凸起 */
+            }
+            /* 地雷格子样式：红色背景、白色文字 */
+            .mine-cell-mine {
+                @apply bg-red-500 text-white;
+            }
+            /* 游戏通用按钮样式 */
+            .mine-btn {
+                @apply px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors;
+            }
+            /* 游戏面板（雷数/时间/重置）样式 */
+            .mine-panel {
+                @apply bg-gray-800 text-white p-2 rounded flex justify-between items-center gap-2;
+            }
+            /* 游戏棋盘容器：正方形、网格布局、固定最大宽度，适配移动端 */
+            .square-grid-board {
+                aspect-ratio: 1 / 1 !important; /* 强制正方形 */
+                display: grid !important;
+                border: 4px solid #374151;
+                background-color: #C0C0C0;
+                width: calc(100vw - 20px) !important; /* 占满视口宽度，留边距 */
+                max-width: 600px; /* 桌面端最大宽度限制 */
+            }
+        }
+    </style>
+</head>
+<!-- 页面主体：深灰背景、弹性居中、占满视口高度、内外边距 -->
+<body class="bg-gray-900 font-mine min-h-screen flex flex-col items-center py-3 px-2 m-0">
+    <!-- 顶部操作栏：返回主站 + 设置按钮 -->
+    <div class="w-full max-w-xl flex justify-between items-center mb-2">
+        <button onclick="window.location.href='https://minigames.jitaimei.top'" class="mine-btn">
+            ← 返回主站
+        </button>
+        <button onclick="openSettings()" class="mine-btn">
+            ⚙️ 设置
+        </button>
+    </div>
+    <!-- 游戏信息面板：剩余雷数、计时、重置游戏 -->
+    <div class="w-full max-w-xl mine-panel mb-3">
+        <div>💣 剩余雷数: <span id="mineCount">30</span></div>
+        <div>⏱️ 时间: <span id="timer">0</span>s</div>
+        <button onclick="initGame()" class="bg-yellow-600 hover:bg-yellow-500 px-2 py-1 rounded text-sm">
+            🔄 重置
+        </button>
+    </div>
+    <!-- 游戏棋盘容器：动态生成格子 -->
+    <div id="gameBoard" class="square-grid-board"></div>
+    <!-- 设置弹窗：固定定位、半透明遮罩、居中显示，默认隐藏 -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/70 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-5 w-full max-w-md">
+            <h3 class="text-xl font-bold mb-4 text-center">游戏设置</h3>
+            <!-- 格子尺寸设置：行+列，5×5~30×30 -->
+            <div class="mb-3">
+                <label class="block font-medium mb-1">格子尺寸 (5×5 ~ 30×30)</label>
+                <div class="flex gap-2">
+                    <input type="number" id="rows" min="5" max="30" value="10" class="w-1/2 p-2 border rounded">
+                    <input type="number" id="cols" min="5" max="30" value="10" class="w-1/2 p-2 border rounded">
+                </div>
+            </div>
+            <!-- 地雷数量设置：1~最大格子数-1 -->
+            <div class="mb-3">
+                <label class="block font-medium mb-1">地雷数量 (1~最大格子数-1)</label>
+                <input type="number" id="mines" min="1" max="899" value="30" class="w-full p-2 border rounded">
+            </div>
+            <!-- 预设难度：点击快速赋值行/列/雷数 -->
+            <div class="mb-4">
+                <label class="block font-medium mb-1">预设难度</label>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="setDifficulty(5,5,3)" class="flex-1 bg-blue-600 text-white p-2 rounded">简单</button>
+                    <button onclick="setDifficulty(10,10,15)" class="flex-1 bg-blue-600 text-white p-2 rounded">中等</button>
+                    <button onclick="setDifficulty(16,16,40)" class="flex-1 bg-blue-600 text-white p-2 rounded">困难</button>
+                    <button onclick="setDifficulty(20,20,60)" class="flex-1 bg-blue-600 text-white p-2 rounded">专家</button>
+                </div>
+            </div>
+            <!-- 设置弹窗操作按钮：保存/取消 -->
+            <div class="flex gap-2">
+                <button onclick="saveSettings()" class="flex-1 bg-green-600 text-white p-2 rounded">保存设置</button>
+                <button onclick="closeSettings()" class="flex-1 bg-gray-600 text-white p-2 rounded">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 游戏全局配置：可通过设置弹窗修改，定义基础规则
+        let config = {
+            rows: 10,                // 棋盘行数
+            cols: 10,                // 棋盘列数
+            mines: 30,               // 地雷数量
+            maxSize: 30,             // 行列最大尺寸
+            minSize: 5,              // 行列最小尺寸
+            longPressThreshold: 200  // 移动端长按判定阈值（毫秒）
+        };
+
+        // 游戏状态：实时记录游戏运行数据，初始化时重置
+        let gameState = {
+            board: [],               // 棋盘数组：存储每个格子的相邻地雷数，-1=已揭开，-2=已标记
+            mineMap: [],             // 地雷地图：二维布尔数组，true=该位置是地雷
+            revealed: 0,             // 已揭开的格子数量
+            flagged: 0,              // 已标记（插旗）的格子数量
+            gameOver: false,         // 游戏是否结束（胜利/失败）
+            timer: null,             // 计时定时器
+            startTime: 0,            // 计时开始时间戳
+            touchTimer: null,        // 移动端触摸定时器（用于长按判定）
+            isLongPressTriggered: false, // 是否触发了长按事件
+            touchStartX: 0,          // 移动端触摸起始X坐标（防误触）
+            touchStartY: 0           // 移动端触摸起始Y坐标（防误触）
+        };
+
+        // 获取页面核心DOM元素，方便后续操作
+        const gameBoard = document.getElementById('gameBoard');   // 游戏棋盘容器
+        const mineCountEl = document.getElementById('mineCount'); // 剩余雷数显示元素
+        const timerEl = document.getElementById('timer');         // 计时显示元素
+        const settingsModal = document.getElementById('settingsModal'); // 设置弹窗
+
+        /**
+         * 初始化游戏核心方法
+         * 清除定时器、重置游戏状态、更新DOM显示、重新生成棋盘/地雷/渲染
+         */
+        function initGame() {
+            // 清除所有定时器，防止多次触发
+            clearInterval(gameState.timer);
+            clearTimeout(gameState.touchTimer);
+            // 重置游戏状态为初始值
+            gameState = {
+                board: [],
+                mineMap: [],
+                revealed: 0,
+                flagged: 0,
+                gameOver: false,
+                timer: null,
+                startTime: 0,
+                touchTimer: null,
+                isLongPressTriggered: false,
+                touchStartX: 0,
+                touchStartY: 0
+            };
+            // 重置DOM显示的时间和雷数
+            timerEl.textContent = '0';
+            mineCountEl.textContent = config.mines;
+            // 清空棋盘容器，重新生成
+            gameBoard.innerHTML = '';
+            // 限制地雷数：不能超过总格子数-1，不能小于1
+            const maxMines = config.rows * config.cols - 1;
+            config.mines = Math.max(1, Math.min(config.mines, maxMines));
+            // 执行游戏初始化流程
+            createBoard();          // 创建空棋盘数组
+            placeMines();           // 随机放置地雷
+            calculateAdjacentMines(); // 计算每个格子的相邻地雷数
+            renderBoard();          // 渲染棋盘到页面
+        }
+
+        /**
+         * 创建空棋盘数组
+         * 初始化board和mineMap为二维数组，默认值：board=0，mineMap=false
+         */
+        function createBoard() {
+            for (let y = 0; y < config.rows; y++) {
+                gameState.board[y] = [];
+                gameState.mineMap[y] = [];
+                for (let x = 0; x < config.cols; x++) {
+                    gameState.board[y][x] = 0;    // 初始相邻地雷数为0
+                    gameState.mineMap[y][x] = false; // 初始无地雷
+                }
+            }
+        }
+
+        /**
+         * 随机放置地雷
+         * 循环生成随机坐标，避免重复放置，直到放够config.mines个
+         */
+        function placeMines() {
+            let minesPlaced = 0; // 已放置地雷数
+            while (minesPlaced < config.mines) {
+                // 生成0~rows-1/cols-1的随机坐标
+                const y = Math.floor(Math.random() * config.rows);
+                const x = Math.floor(Math.random() * config.cols);
+                // 该位置无地雷时，标记为地雷并计数+1
+                if (!gameState.mineMap[y][x]) {
+                    gameState.mineMap[y][x] = true;
+                    minesPlaced++;
+                }
+            }
+        }
+
+        /**
+         * 计算每个格子的相邻地雷数
+         * 定义8个方向（上下左右+斜角），遍历每个非地雷格子，统计周围地雷数
+         */
+        function calculateAdjacentMines() {
+            // 8个相邻方向的坐标偏移量
+            const directions = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+            for (let y = 0; y < config.rows; y++) {
+                for (let x = 0; x < config.cols; x++) {
+                    if (gameState.mineMap[y][x]) continue; // 地雷格子跳过，无需计算
+                    let count = 0; // 相邻地雷数
+                    // 遍历8个方向，统计有效范围内的地雷数
+                    for (let [dy, dx] of directions) {
+                        const ny = y + dy, nx = x + dx;
+                        // 坐标在棋盘内，且该位置是地雷，计数+1
+                        if (ny >=0 && ny < config.rows && nx >=0 && nx < config.cols && gameState.mineMap[ny][nx]) count++;
+                    }
+                    gameState.board[y][x] = count; // 赋值相邻地雷数
+                }
+            }
+        }
+
+        /**
+         * 渲染棋盘到页面
+         * 设置网格布局，循环创建格子DOM元素，绑定点击/右键/移动端触摸事件
+         */
+        function renderBoard() {
+            gameBoard.innerHTML = '';
+            // 设置CSS网格布局：列数/行数等于配置的cols/rows
+            gameBoard.style.gridTemplateColumns = `repeat(${config.cols}, 1fr)`;
+            gameBoard.style.gridTemplateRows = `repeat(${config.rows}, 1fr)`;
+            // 遍历每个格子坐标，创建DOM元素
+            for (let y = 0; y < config.rows; y++) {
+                for (let x = 0; x < config.cols; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'mine-cell'; // 基础格子样式
+                    cell.dataset.y = y; // 自定义属性：存储行坐标，方便事件获取
+                    cell.dataset.x = x; // 自定义属性：存储列坐标，方便事件获取
+                    // 鼠标左键点击：揭开格子
+                    cell.addEventListener('click', () => revealCell(y, x));
+                    // 鼠标右键：标记/取消标记格子（阻止默认右键菜单）
+                    cell.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        flagCell(y, x);
+                    });
+                    // 移动端触摸开始：记录起始坐标，启动长按定时器
+                    cell.addEventListener('touchstart', (e) => {
+                        gameState.touchStartX = e.touches[0].clientX;
+                        gameState.touchStartY = e.touches[0].clientY;
+                        gameState.isLongPressTriggered = false;
+                        // 达到长按阈值则触发标记格子
+                        gameState.touchTimer = setTimeout(() => {
+                            gameState.isLongPressTriggered = true;
+                            flagCell(y, x);
+                        }, config.longPressThreshold);
+                    });
+                    // 移动端触摸结束：判断是短按（揭开）还是长按（已标记），防误触
+                    cell.addEventListener('touchend', (e) => {
+                        clearTimeout(gameState.touchTimer); // 清除长按定时器
+                        // 获取触摸结束坐标，计算偏移量
+                        const touchEndX = e.changedTouches[0].clientX;
+                        const touchEndY = e.changedTouches[0].clientY;
+                        const dx = Math.abs(touchEndX - gameState.touchStartX);
+                        const dy = Math.abs(touchEndY - gameState.touchStartY);
+                        // 偏移量<10（防滑动误触）且未触发长按 → 短按揭开格子
+                        if (dx < 10 && dy < 10 && !gameState.isLongPressTriggered) {
+                            revealCell(y, x);
+                        }
+                    });
+                    // 移动端触摸移动：清除定时器，取消长按/短按（防滑动误触）
+                    cell.addEventListener('touchmove', () => {
+                        clearTimeout(gameState.touchTimer);
+                        gameState.isLongPressTriggered = false;
+                    });
+                    // 移动端触摸取消：清除定时器，取消长按/短按
+                    cell.addEventListener('touchcancel', () => {
+                        clearTimeout(gameState.touchTimer);
+                        gameState.isLongPressTriggered = false;
+                    });
+                    gameBoard.appendChild(cell); // 将格子添加到棋盘容器
+                }
+            }
+        }
+
+        /**
+         * 揭开格子核心方法
+         * 前置判断游戏状态，首次揭开启动计时，踩到地雷则游戏失败，否则递归揭开
+         * @param {number} y - 格子行坐标
+         * @param {number} x - 格子列坐标
+         */
+        function revealCell(y, x) {
+            // 游戏结束/格子已揭开/格子已标记 → 直接返回，不执行操作
+            if (gameState.gameOver || gameState.board[y][x] === -1 || gameState.board[y][x] === -2) return;
+            // 首次揭开格子 → 启动计时（避免未开始游戏就计时）
+            if (gameState.revealed === 0) startTimer();
+            // 踩到地雷 → 游戏失败
+            if (gameState.mineMap[y][x]) { gameOver(false); return; }
+            // 非地雷 → 递归揭开当前及周围格子
+            revealRecursive(y, x);
+            // 检查是否满足胜利条件
+            checkWin();
+        }
+
+        /**
+         * 递归揭开格子
+         * 处理边界判断，已揭开/已标记格子跳过，0地雷格子递归揭开周围8个方向
+         * @param {number} y - 格子行坐标
+         * @param {number} x - 格子列坐标
+         */
+        function revealRecursive(y, x) {
+            const directions = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+            // 坐标越界/格子已揭开/格子已标记 → 直接返回
+            if (y <0 || y >= config.rows || x <0 || x >= config.cols || gameState.board[y][x] === -1 || gameState.board[y][x] === -2) return;
+            gameState.revealed++; // 已揭开格子数+1
+            const cellVal = gameState.board[y][x]; // 获取当前格子的相邻地雷数
+            gameState.board[y][x] = -1; // 标记格子为「已揭开」状态
+            // 获取当前格子DOM元素，修改样式
+            const cell = document.querySelector(`[data-y="${y}"][data-x="${x}"]`);
+            cell.classList.add('mine-cell-revealed'); // 添加已揭开样式
+            // 相邻地雷数>0 → 显示数字，并设置对应颜色
+            if (cellVal > 0) {
+                cell.textContent = cellVal;
+                // 地雷数对应颜色：1蓝~8灰，符合经典扫雷设计
+                const colors = ['blue', 'green', 'red', 'darkblue', 'brown', 'cyan', 'black', 'gray'];
+                cell.style.color = colors[cellVal - 1];
+            }
+            // 相邻地雷数=0 → 递归揭开周围8个方向的格子
+            if (cellVal === 0) {
+                for (let [dy, dx] of directions) revealRecursive(y+dy, x+dx);
+            }
+        }
+
+        /**
+         * 标记/取消标记格子（插旗）
+         * 游戏结束/格子已揭开 → 禁止操作，切换格子标记状态并更新DOM
+         * @param {number} y - 格子行坐标
+         * @param {number} x - 格子列坐标
+         */
+        function flagCell(y, x) {
+            // 游戏结束/格子已揭开 → 直接返回
+            if (gameState.gameOver || gameState.board[y][x] === -1) return;
+            // 首次标记 → 启动计时
+            if (gameState.revealed === 0) startTimer();
+            const cell = document.querySelector(`[data-y="${y}"][data-x="${x}"]`);
+            // 已标记（-2）→ 取消标记，恢复为0，移除旗子
+            if (gameState.board[y][x] === -2) {
+                gameState.board[y][x] = 0;
+                gameState.flagged--;
+                cell.textContent = '';
+            } else {
+                // 未标记 → 标记为-2，添加旗子，标记数+1
+                gameState.board[y][x] = -2;
+                gameState.flagged++;
+                cell.textContent = '🚩';
+            }
+            // 更新剩余雷数：总雷数 - 已标记数
+            mineCountEl.textContent = config.mines - gameState.flagged;
+        }
+
+        /**
+         * 游戏结束处理
+         * 停止计时，失败则显示所有地雷，弹出对应提示
+         * @param {boolean} isWin - 是否胜利，true=胜利，false=失败
+         */
+        function gameOver(isWin) {
+            gameState.gameOver = true; // 标记游戏结束
+            clearInterval(gameState.timer); // 停止计时
+            // 游戏失败 → 遍历棋盘，显示所有地雷格子样式和图标
+            if (!isWin) {
+                for (let y = 0; y < config.rows; y++) {
+                    for (let x = 0; x < config.cols; x++) {
+                        if (gameState.mineMap[y][x]) {
+                            const cell = document.querySelector(`[data-y="${y}"][data-x="${x}"]`);
+                            cell.classList.add('mine-cell-revealed', 'mine-cell-mine');
+                            cell.textContent = '💣';
+                        }
+                    }
+                }
+                alert('游戏结束！踩到雷了！');
+            }
+        }
+
+        /**
+         * 检查胜利条件
+         * 已揭开格子数 = 总格子数 - 地雷数 → 游戏胜利，调用gameOver并弹出提示
+         */
+        function checkWin() {
+            if (gameState.revealed === config.rows * config.cols - config.mines) {
+                gameOver(true); // 传入true表示胜利
+                alert('恭喜你！扫雷成功！');
+            }
+        }
+
+        /**
+         * 启动游戏计时
+         * 记录开始时间戳，开启定时器，每秒更新时间显示
+         */
+        function startTimer() {
+            gameState.startTime = Date.now(); // 记录毫秒级时间戳
+            gameState.timer = setInterval(() => {
+                // 计算已流逝时间：秒级，向下取整
+                timerEl.textContent = Math.floor((Date.now() - gameState.startTime)/1000);
+            }, 1000); // 每秒执行一次
+        }
+
+        /**
+         * 打开设置弹窗
+         * 将当前游戏配置赋值到输入框，显示弹窗
+         */
+        function openSettings() {
+            document.getElementById('rows').value = config.rows;
+            document.getElementById('cols').value = config.cols;
+            document.getElementById('mines').value = config.mines;
+            settingsModal.classList.remove('hidden'); // 显示弹窗
+        }
+
+        /**
+         * 关闭设置弹窗
+         * 隐藏弹窗，不保存任何修改
+         */
+        function closeSettings() { settingsModal.classList.add('hidden'); }
+
+        /**
+         * 设置预设难度
+         * 给设置弹窗的输入框赋值对应行/列/雷数
+         * @param {number} rows - 行数
+         * @param {number} cols - 列数
+         * @param {number} mines - 地雷数
+         */
+        function setDifficulty(rows, cols, mines) {
+            document.getElementById('rows').value = rows;
+            document.getElementById('cols').value = cols;
+            document.getElementById('mines').value = mines;
+        }
+
+        /**
+         * 保存游戏设置
+         * 获取输入框值，验证合法性，更新配置，关闭弹窗并重新初始化游戏
+         */
+        function saveSettings() {
+            // 获取输入框的数值并转为整数
+            const rows = parseInt(document.getElementById('rows').value);
+            const cols = parseInt(document.getElementById('cols').value);
+            const mines = parseInt(document.getElementById('mines').value);
+            
+            // 验证尺寸合法性：必须在5~30之间
+            if (rows < config.minSize || rows > config.maxSize || cols < config.minSize || cols > config.maxSize) {
+                alert(`尺寸必须在${config.minSize}×${config.minSize}~${config.maxSize}×${config.maxSize}`);
+                return;
+            }
+            // 验证地雷数合法性：1~总格子数-1
+            const maxMines = rows * cols - 1;
+            if (mines < 1 || mines > maxMines) {
+                alert(`雷数必须在1~${maxMines}之间`);
+                return;
+            }
+            // 验证通过，更新全局配置
+            config.rows = rows; 
+            config.cols = cols; 
+            config.mines = mines;
+            // 关闭弹窗并重新初始化游戏
+            closeSettings(); 
+            initGame();
+        }
+
+        // 窗口大小改变时，重新渲染棋盘（适配移动端屏幕缩放）
+        window.addEventListener('resize', () => renderBoard());
+        // 移动端屏幕旋转时，重新渲染棋盘（适配横竖屏切换）
+        window.addEventListener('orientationchange', () => renderBoard());
+        // 页面加载完成后，初始化游戏（入口）
+        window.addEventListener('load', initGame);
+    </script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 视口设置：自适应设备宽度、初始缩放1.0、禁止用户缩放，适配移动端 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>打砖块 | Jitaimei小游戏 minigames.jitaimei.top</title>
+    <style>
+        /* 通配符选择器：重置所有元素的内外边距，盒模型为border-box（宽高包含边框内边距） */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        /* 页面主体样式：隐藏滚动条、深色背景、字体、禁止触摸默认行为（适配移动端） */
+        body {
+            overflow: hidden;
+            background: #1a1a2e;
+            font-family: Arial, sans-serif;
+            touch-action: none;
+        }
+        /* 游戏画布样式：块级显示、画布背景色 */
+        #gameCanvas {
+            display: block;
+            background: #16213e;
+        }
+        /* 返回按钮样式：固定定位、内边距、背景色、文字样式、圆角、层级（防止被画布遮挡）、过渡效果 */
+        .back-button {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            padding: 10px 15px;
+            background: #e94560;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            z-index: 1000;
+            transition: background 0.3s;
+        }
+        /* 返回按钮hover效果：背景色变化 */
+        .back-button:hover {
+            background: #ff6b6b;
+        }
+        /* 游戏信息（分数/生命）样式：固定定位、文字颜色、字号、层级 */
+        .game-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 18px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <!-- 返回主站按钮，链接到小游戏主站 -->
+    <a href="https://minigames.jitaimei.top" class="back-button">返回主站</a>
+    <!-- 游戏信息展示区：分数和剩余生命 -->
+    <div class="game-info">
+        <div>分数: <span id="score">0</span></div>
+        <div>生命: <span id="lives">3</span></div>
+    </div>
+    <!-- 游戏核心画布：所有游戏元素（球、挡板、砖块）都在这绘制 -->
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // ============== 1. 获取DOM元素 & 初始化游戏基础变量 ==============
+        // 获取画布元素和2D绘图上下文（核心，用于绘制所有游戏元素）
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        // 获取分数、生命的DOM元素，用于实时更新显示
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+        // 游戏基础状态变量：分数、剩余生命、游戏运行状态
+        let score = 0;
+        let lives = 3;
+        let gameRunning = true;
+
+        // ============== 2. 画布自适应函数：适配窗口大小 ==============
+        // 重置画布宽高为窗口的宽高，保证占满整个屏幕
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        // 页面加载时执行一次，初始化画布大小
+        resizeCanvas();
+        // 监听窗口大小变化事件，实时调整画布大小
+        window.addEventListener('resize', resizeCanvas);
+
+        // ============== 3. 定义游戏元素参数（球、挡板、砖块） ==============
+        // 小球参数：坐标(画布中心偏下)、半径(按画布最小边比例适配)、x/y轴移动速度、基础速度
+        const ball = {
+            x: canvas.width / 2,
+            y: canvas.height - 100,
+            radius: Math.min(canvas.width, canvas.height) * 0.015,
+            dx: 3,
+            dy: -3,
+            speed: 3
+        };
+        // 挡板参数：宽高(按画布最小边比例适配)、初始坐标(画布底部居中)、移动速度
+        const paddle = {
+            width: Math.min(canvas.width, canvas.height) * 0.2,
+            height: Math.min(canvas.width, canvas.height) * 0.04,
+            x: canvas.width / 2 - Math.min(canvas.width, canvas.height) * 0.1,
+            y: canvas.height - 60,
+            speed: 8
+        };
+        // 砖块参数：行数、列数(按画布宽度自适应)、宽高(适配画布)、内边距(砖块之间的间距)、偏移量(画布到砖块的边距)
+        const brickRowCount = 5;
+        const brickColumnCount = Math.floor(canvas.width / (canvas.width * 0.15));
+        const brickWidth = (canvas.width - 60) / brickColumnCount;
+        const brickHeight = Math.min(canvas.width, canvas.height) * 0.05;
+        const brickPadding = 10;
+        const brickOffsetTop = 60;
+        const brickOffsetLeft = 30;
+        // 砖块二维数组：存储每个砖块的坐标和状态(1=显示/可碰撞，0=隐藏/已击碎)
+        let bricks = [];
+        // 循环初始化砖块数组的行列和初始状态
+        for (let c = 0; c < brickColumnCount; c++) {
+            bricks[c] = [];
+            for (let r = 0; r < brickRowCount; r++) {
+                bricks[c][r] = { x: 0, y: 0, status: 1 };
+            }
+        }
+
+        // ============== 4. 游戏元素绘制函数 ==============
+        // 绘制小球：绘制圆形，填充底色+描边
+        function drawBall() {
+            ctx.beginPath(); // 开始新的绘制路径
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2); // 绘制圆形（中心坐标、半径、起始角度、结束角度）
+            ctx.fillStyle = '#0f3460'; // 填充色
+            ctx.fill(); // 执行填充
+            ctx.strokeStyle = '#e94560'; // 描边色
+            ctx.lineWidth = 3; // 描边宽度
+            ctx.stroke(); // 执行描边
+            ctx.closePath(); // 关闭绘制路径
+        }
+        // 绘制挡板：绘制圆角矩形，单一填充色
+        function drawPaddle() {
+            ctx.beginPath();
+            // 绘制圆角矩形（坐标、宽高、圆角半径）
+            ctx.roundRect(paddle.x, paddle.y, paddle.width, paddle.height, 5);
+            ctx.fillStyle = '#e94560';
+            ctx.fill();
+            ctx.closePath();
+        }
+        // 绘制砖块：按行列循环绘制，不同行不同颜色，仅绘制状态为1的砖块
+        function drawBricks() {
+            // 砖块颜色数组，按行循环取色
+            const colors = ['#e94560', '#ff6b6b', '#feca57', '#48dbfb', '#1dd1a1'];
+            // 双重循环遍历所有砖块
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    // 仅绘制状态为1的砖块（未被击碎）
+                    if (bricks[c][r].status === 1) {
+                        // 计算当前砖块的实际坐标（偏移量+行列*砖块尺寸）
+                        const brickX = c * brickWidth + brickOffsetLeft;
+                        const brickY = r * brickHeight + brickOffsetTop;
+                        // 更新砖块数组中的坐标（用于碰撞检测）
+                        bricks[c][r].x = brickX;
+                        bricks[c][r].y = brickY;
+                        ctx.beginPath();
+                        // 绘制圆角砖块（减去内边距，避免砖块重叠）
+                        ctx.roundRect(brickX, brickY, brickWidth - brickPadding, brickHeight - brickPadding, 3);
+                        ctx.fillStyle = colors[r % colors.length]; // 按行取色，循环使用
+                        ctx.fill();
+                        ctx.closePath();
+                    }
+                }
+            }
+        }
+
+        // ============== 5. 碰撞检测函数 ==============
+        // 砖块碰撞检测：判断小球是否与砖块接触，接触则击碎砖块+反转小球方向+更新分数
+        function collisionDetection() {
+            // 双重循环遍历所有砖块
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    const b = bricks[c][r];
+                    // 仅检测状态为1的砖块
+                    if (b.status === 1) {
+                        // 小球坐标与砖块坐标的碰撞判断（小球中心在砖块范围内即碰撞）
+                        if (ball.x > b.x && ball.x < b.x + brickWidth &&
+                            ball.y > b.y && ball.y < b.y + brickHeight) {
+                            ball.dy = -ball.dy; // 反转小球y轴移动方向
+                            b.status = 0; // 标记砖块为已击碎
+                            score++; // 分数+1
+                            scoreElement.textContent = score; // 更新页面分数显示
+                            // 胜利条件：分数等于所有砖块数量，弹出提示并刷新页面重新开始
+                            if (score === brickRowCount * brickColumnCount) {
+                                alert('恭喜你获胜！分数: ' + score);
+                                document.location.reload();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ============== 6. 游戏核心渲染函数（帧动画） ==============
+        // 主绘制函数：清空画布→绘制所有元素→检测碰撞→更新元素位置→请求下一帧，形成动画
+        function draw() {
+            // 清空整个画布（避免上一帧的元素残留）
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 依次绘制砖块、小球、挡板
+            drawBricks();
+            drawBall();
+            drawPaddle();
+            // 执行砖块碰撞检测
+            collisionDetection();
+
+            // 计算小球下一帧的坐标（用于边界判断，避免直接移动后越界）
+            const nextX = ball.x + ball.dx;
+            const nextY = ball.y + ball.dy;
+
+            // 小球左右边界检测：碰到画布左右边缘，反转x轴方向
+            if (nextX + ball.radius > canvas.width || nextX - ball.radius < 0) {
+                ball.dx = -ball.dx;
+            }
+            // 小球顶部边界检测：碰到画布顶部，反转y轴方向
+            if (nextY - ball.radius < 0) {
+                ball.dy = -ball.dy;
+            }
+
+            // 小球向下移动时的检测（挡板碰撞+底部落界）
+            if (ball.dy > 0) {
+                // 定义小球和挡板的边界坐标（方便碰撞判断）
+                const ballBottom = nextY + ball.radius;
+                const ballTop = nextY - ball.radius;
+                const ballLeft = nextX - ball.radius;
+                const ballRight = nextX + ball.radius;
+                const paddleTop = paddle.y;
+                const paddleBottom = paddle.y + paddle.height;
+                const paddleLeft = paddle.x;
+                const paddleRight = paddle.x + paddle.width;
+
+                // 挡板碰撞检测：小球与挡板的边界重叠即碰撞
+                if (ballRight > paddleLeft && 
+                    ballLeft < paddleRight && 
+                    ballBottom >= paddleTop && 
+                    ballTop <= paddleBottom) {
+                    // 调整小球位置，避免卡进挡板
+                    ball.y = paddleTop - ball.radius;
+                    // 反转小球y轴方向（向上弹起），取绝对值保证始终向上
+                    ball.dy = -Math.abs(ball.dy);
+                    // 根据小球撞击挡板的位置，调整x轴速度（实现斜向弹起，增加游戏趣味性）
+                    const hitPos = (ball.x - paddle.x) / paddle.width;
+                    ball.dx = 6 * (hitPos - 0.5);
+                }
+                // 小球落界检测：碰到画布底部，生命-1
+                else if (nextY - ball.radius > canvas.height) {
+                    lives--; // 剩余生命-1
+                    livesElement.textContent = lives; // 更新页面生命显示
+                    // 游戏结束条件：生命为0，弹出提示并刷新页面
+                    if (lives === 0) {
+                        alert('游戏结束  分数: ' + score);
+                        document.location.reload();
+                    } else {
+                        // 还有生命：重置小球和挡板的初始位置，重新开始本轮
+                        ball.x = canvas.width / 2;
+                        ball.y = canvas.height - 100;
+                        ball.dx = 3;
+                        ball.dy = -3;
+                        paddle.x = canvas.width / 2 - paddle.width / 2;
+                    }
+                }
+            }
+
+            // 更新小球的实际坐标（执行移动）
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+            // 请求浏览器下一帧重绘，形成连续的动画效果（递归调用）
+            requestAnimationFrame(draw);
+        }
+
+        // ============== 7. 事件监听（鼠标+移动端触摸） ==============
+        // 初始化鼠标x坐标，用于挡板跟随
+        let mouseX = canvas.width / 2;
+        // 鼠标移动事件：挡板跟随鼠标x坐标移动，限制挡板不超出画布左右边界
+        canvas.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            paddle.x = mouseX - paddle.width / 2; // 挡板中心与鼠标对齐
+            if (paddle.x < 0) paddle.x = 0; // 左边界限制
+            if (paddle.x + paddle.width > canvas.width) {
+                paddle.x = canvas.width - paddle.width; // 右边界限制
+            }
+        });
+        // 移动端触摸移动事件：适配手机端，挡板跟随触摸点移动
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault(); // 阻止触摸的默认行为（如页面滚动）
+            const touchX = e.touches[0].clientX; // 获取第一个触摸点的x坐标
+            paddle.x = touchX - paddle.width / 2; // 挡板中心与触摸点对齐
+            if (paddle.x < 0) paddle.x = 0; // 左边界限制
+            if (paddle.x + paddle.width > canvas.width) {
+                paddle.x = canvas.width - paddle.width; // 右边界限制
+            }
+        }, { passive: false }); // 关闭被动监听，允许e.preventDefault()
+
+        // ============== 8. 启动游戏 ==============
+        // 调用主绘制函数，开始游戏帧动画
+        draw();
+    </script>
+</body>
+</html>
