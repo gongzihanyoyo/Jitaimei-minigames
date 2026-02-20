@@ -1,4 +1,4 @@
-# Jitaimei-minigames
+## Jitaimei-minigames
 
 ### Jitaimei小游戏官方开源仓库
 
@@ -10,7 +10,7 @@ by Jitaimei Studio & JLI Tech Studio
 
 本仓库提供Jitaimei小游戏网站中的**大多数**游戏的源代码。
 
-Q：为什么是**“大多数”**？
+Q：为什么是“大多数”？
 
 A：本仓库中没有给出源代码的游戏，一般是有以下两种原因：
 
